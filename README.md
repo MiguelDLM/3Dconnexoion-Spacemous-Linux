@@ -221,6 +221,43 @@ an estimate is never mistaken for the real quota. Polling happens on a
 background thread, so a slow network never stalls the screen. Adding another
 provider is a `poll(cfg)` method plus one entry in `aiusage.PROVIDERS`.
 
+### Update notifications and in-place updating
+
+`updates.py` watches the project's GitHub releases and can apply one.
+
+- **Watching**: the daemon asks the releases API at most once every
+  *Check every (hours)* (24 by default) whether a tag newer than the running
+  `VERSION` exists. The answer is cached in
+  `~/.config/spacepilot-lcd/update-cache.json`, so restarts do not re-query
+  and the anonymous 60-per-hour rate limit is never in play. A new release is
+  announced **once** — as an overlay on the LCD and as a desktop notification
+  through `notify-send` — and the cache remembers it so a daemon restart does
+  not repeat it. Both channels and the interval are switches in the *Release
+  watch* box of the About tab.
+- **Installing** is never automatic. The About tab enables an **Install
+  update** button when one is available; it first shows the exact commands it
+  will run and then streams them into a log window:
+
+  ```
+  git fetch --tags origin
+  git merge --ff-only <tag>
+  venv/bin/python -m pip install -r requirements.txt
+  systemctl --user restart spacepilot-lcd.service
+  ```
+
+  `--ff-only` means the update can only move your branch forward onto exactly
+  the released commit — it can never merge, rewrite or leave conflicts behind
+  — and it refuses to start at all if the working tree has local changes, if
+  the checkout has no remote pointing at this project, or if you are running
+  one of the standalone PyInstaller binaries (those you replace from the
+  release page).
+- **From the shell**, the same thing without Qt:
+
+  ```bash
+  venv/bin/python updates.py            # report what is available
+  venv/bin/python updates.py --install  # apply it
+  ```
+
 ### Settings application
 
 `lcd_settings.py` is a native Qt window (PySide6) to configure everything: which

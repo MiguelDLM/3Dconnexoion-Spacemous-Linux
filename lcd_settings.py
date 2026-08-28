@@ -24,20 +24,24 @@ the running daemon applies it immediately — no restart needed.
 """
 
 import copy
+import queue
 import sys
+import threading
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QApplication, QCheckBox, QColorDialog, QComboBox, QDialog,
+    QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMainWindow, QMenu, QMessageBox, QPushButton,
+    QMainWindow, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
     QScrollArea, QSlider, QSpinBox, QTableWidget, QTableWidgetItem,
     QTabWidget, QVBoxLayout, QWidget)
 
 import applets
 import lcdconfig
 import aiusage
+import updates
 from keyinjector import validate_combo
 from spnav_client import State
 from spplcd import WIDTH, HEIGHT
@@ -123,6 +127,63 @@ class ColorButton(QPushButton):
         if color.isValid():
             self.set_value(color.name())
             self._on_change(color.name())
+
+
+class InstallDialog(QDialog):
+    """Runs updates.install() and streams its progress into a log view."""
+
+    def __init__(self, parent, tag):
+        super().__init__(parent)
+        self.setWindowTitle(f"Installing {tag}")
+        self.resize(560, 320)
+        box = QVBoxLayout(self)
+        self.view = QPlainTextEdit()
+        self.view.setReadOnly(True)
+        box.addWidget(self.view)
+        self.close_btn = QPushButton("Close")
+        self.close_btn.setEnabled(False)
+        self.close_btn.clicked.connect(self.accept)
+        box.addWidget(self.close_btn)
+
+        self._queue = queue.Queue()
+        self._done = False
+        self._worker = threading.Thread(
+            target=self._install, args=(tag,), daemon=True)
+        self._worker.start()
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._drain)
+        self._timer.start(120)
+
+    def _install(self, tag):
+        try:
+            ok, _ = updates.install(tag, log=self._queue.put)
+        except Exception as err:                 # report, never crash the app
+            self._queue.put(f"Install failed: {err}")
+            ok = False
+        self._queue.put(None)
+        self._ok = ok
+
+    def _drain(self):
+        while True:
+            try:
+                line = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            if line is None:
+                self._done = True
+                self._timer.stop()
+                self.close_btn.setEnabled(True)
+                self.close_btn.setDefault(True)
+                return
+            self.view.appendPlainText(line)
+
+    def closeEvent(self, event):
+        # The fast-forward and pip run must not be abandoned half way.
+        if not self._done:
+            event.ignore()
+            return
+        self._timer.stop()
+        super().closeEvent(event)
 
 
 def demo_spnav_state():
@@ -316,6 +377,12 @@ class SettingsWindow(QMainWindow):
             "<p align='center'>License: GPL-3.0</p>")
         info.setOpenExternalLinks(True)
         layout.addWidget(info)
+        self.update_label = QLabel("")
+        self.update_label.setAlignment(Qt.AlignCenter)
+        self.update_label.setOpenExternalLinks(True)
+        self.update_label.setWordWrap(True)
+        layout.addWidget(self.update_label)
+
         row = QHBoxLayout()
         row.addStretch(1)
         lic_btn = QPushButton("View license")
@@ -324,11 +391,60 @@ class SettingsWindow(QMainWindow):
         upd_btn = QPushButton("Check for updates")
         upd_btn.clicked.connect(self._check_updates)
         row.addWidget(upd_btn)
+        self.install_btn = QPushButton("Install update")
+        self.install_btn.setEnabled(False)
+        self.install_btn.clicked.connect(self._install_update)
+        row.addWidget(self.install_btn)
         row.addStretch(1)
         layout.addLayout(row)
 
+        watch = QGroupBox("Release watch")
+        wform = QFormLayout(watch)
+        upd_cfg = self.cfg.setdefault(
+            "updates", copy.deepcopy(lcdconfig.DEFAULT_CONFIG["updates"]))
+        for key, label in (("enabled", "Watch GitHub for new releases"),
+                           ("notify_lcd", "Announce on the LCD"),
+                           ("notify_desktop", "Desktop notification")):
+            box = QCheckBox(label)
+            box.setChecked(bool(upd_cfg.get(key, True)))
+            box.toggled.connect(
+                lambda v, k=key: upd_cfg.__setitem__(k, v))
+            wform.addRow(box)
+        hours = QSpinBox()
+        hours.setRange(1, 720)
+        hours.setValue(int(upd_cfg.get("check_hours", 24)))
+        hours.valueChanged.connect(
+            lambda v: upd_cfg.__setitem__("check_hours", v))
+        wform.addRow("Check every (hours)", hours)
+        watch.setMaximumWidth(420)
+        wrap = QHBoxLayout()
+        wrap.addStretch(1)
+        wrap.addWidget(watch)
+        wrap.addStretch(1)
+        layout.addLayout(wrap)
+
         layout.addStretch(2)
+        # Show whatever the daemon already cached, without hitting the API.
+        self._show_update_status(updates.status(check_hours=10 ** 6))
         return host
+
+    def _show_update_status(self, info):
+        """Fill the About tab from an updates.status() dict."""
+        self._update_info = info
+        current = info.get("current", f"v{lcdconfig.VERSION}")
+        tag = info.get("tag") or ""
+        if info.get("error"):
+            text = f"Could not reach GitHub: {info['error']}"
+        elif info.get("available"):
+            url = info.get("url") or f"{lcdconfig.REPO_URL}/releases/latest"
+            text = (f"<b>{tag} is available</b> (you have {current}) &nbsp;"
+                    f"<a href='{url}'>release notes</a>")
+        elif not tag:
+            text = "No releases published yet."
+        else:
+            text = f"Up to date ({current})."
+        self.update_label.setText(f"<p align='center'>{text}</p>")
+        self.install_btn.setEnabled(bool(info.get("available")))
 
     def _show_license(self):
         import os
@@ -355,33 +471,38 @@ class SettingsWindow(QMainWindow):
         dlg.exec()
 
     def _check_updates(self):
-        import json
-        from urllib.request import urlopen, Request
-        api = (lcdconfig.REPO_URL.replace("github.com",
-                                          "api.github.com/repos")
-               + "/releases/latest")
-        try:
-            req = Request(api, headers={"Accept":
-                                        "application/vnd.github+json"})
-            with urlopen(req, timeout=6) as resp:
-                latest = json.load(resp).get("tag_name", "")
-        except Exception as err:
+        self.update_label.setText("<p align='center'>Checking...</p>")
+        QApplication.processEvents()
+        info = updates.status(force=True)
+        self._show_update_status(info)
+        if info.get("error"):
             QMessageBox.warning(self, "Check for updates",
-                                f"Could not reach GitHub:\n{err}")
+                                f"Could not reach GitHub:\n{info['error']}")
+
+    def _install_update(self):
+        info = getattr(self, "_update_info", {})
+        tag = info.get("tag")
+        if not tag:
             return
-        current = f"v{lcdconfig.VERSION}"
-        if not latest:
-            QMessageBox.information(self, "Check for updates",
-                                    "No releases published yet.")
-        elif latest == current:
-            QMessageBox.information(
-                self, "Check for updates",
-                f"You are up to date ({current}).")
-        else:
-            QMessageBox.information(
-                self, "Check for updates",
-                f"New version available: {latest} (you have {current}).\n"
-                f"Download it at:\n{lcdconfig.REPO_URL}/releases/latest")
+        method, detail = updates.install_method()
+        if method is None:
+            QMessageBox.warning(
+                self, "Install update",
+                f"This copy cannot update itself in place:\n\n{detail}\n\n"
+                f"Get {tag} from {info.get('url') or lcdconfig.REPO_URL}")
+            return
+        steps = "\n".join(f"  {n + 1}. {step}"
+                           for n, step in enumerate(updates.plan(tag)))
+        if QMessageBox.question(
+                self, "Install update",
+                f"Install {tag} into {updates.INSTALL_DIR}?\n\n"
+                f"This runs, in order:\n{steps}\n\n"
+                "The fast-forward cannot rewrite or merge anything, and it "
+                "was already checked that you have no local changes.") \
+                != QMessageBox.Yes:
+            return
+        InstallDialog(self, tag).exec()
+        self._show_update_status(updates.status(force=True))
 
     def _build_profiles_tab(self):
         host = QWidget()

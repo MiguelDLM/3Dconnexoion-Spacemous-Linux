@@ -22,7 +22,7 @@ jobs:
         run: |
           python - <<'EOF'
           import time
-          import aiusage, lcdconfig, applets
+          import aiusage, lcdconfig, applets, updates
           from keyinjector import validate_combo
           from spnav_client import State
           from sysstats import SystemStats
@@ -52,4 +52,12 @@ jobs:
           assert validate_combo("nosuchkey") is not None
           ai.stop()
           print("key parser OK")
+          assert updates.parse_version("v1.2.3") == (1, 2, 3)
+          for newer, older in (("v1.1", "1.0"), ("v1.0.1", "1.0"),
+                               ("v2", "1.9")):
+              assert updates.is_newer(newer, older), (newer, older)
+          for same in ("v1.0", "v0.9", "", "nightly"):
+              assert not updates.is_newer(same, "1.0"), same
+          assert updates.repo_slug() == "MiguelDLM/3dxdisp-pro"
+          print("update logic OK")
           EOF

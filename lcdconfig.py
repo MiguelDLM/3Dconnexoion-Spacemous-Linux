@@ -96,6 +96,13 @@ DEFAULT_CONFIG = {
     # Any interaction restores the previous page.
     "screensaver": {"enabled": False, "minutes": 10, "behavior": "page",
                     "page_index": 0, "image": ""},
+    # Release watch: ask GitHub every `check_hours` whether a newer tag than
+    # VERSION exists, and announce it once per release (on the LCD as an
+    # overlay, on the desktop through notify-send). Installing is never
+    # automatic — it is a button in the settings app, or updates.py
+    # --install. See updates.py.
+    "updates": {"enabled": True, "check_hours": 24, "notify_lcd": True,
+                "notify_desktop": True},
     "pages": [
         {"type": "mappings"},
         {"type": "clock"},

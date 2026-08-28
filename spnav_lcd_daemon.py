@@ -21,7 +21,8 @@ companion settings app (lcd_settings.py) and stored in
 ~/.config/spacepilot-lcd/config.json; the daemon hot-reloads the file when it
 changes. Available applets: button mappings, digital/analog/dual clocks,
 calendar, system monitor, 6DOF input test, AI subscription usage. Desktop
-notifications can be mirrored on the screen as overlays.
+notifications can be mirrored on the screen as overlays, and new releases on
+GitHub are announced the same way (see updates.py; installing stays manual).
 
 Bezel keys (they report on the LCD USB interface, endpoint 0x81 — invisible
 to spacenavd; every press gives on-screen feedback):
@@ -44,6 +45,7 @@ import usb.core
 import aiusage
 import applets
 import lcdconfig
+import updates
 from notifications import NotificationListener
 from spnav_client import SpnavClient
 from spplcd import SpacePilotLCD
@@ -77,6 +79,8 @@ def main():
     stats = SystemStats()
     spnav = None
     ai = None               # aiusage.AIUsage, only while an AI page exists
+    updater = None          # updates.UpdateChecker, while the watch is on
+    announced = None        # release tag already announced this run
     notif_listener = None
     notif = None            # (app, summary, body, expiry)
 
@@ -182,7 +186,7 @@ def main():
         return None
 
     def apply_config():
-        nonlocal spnav, notif_listener, ai, page, dirty, brightness
+        nonlocal spnav, notif_listener, ai, updater, page, dirty, brightness
         if need_spnav() and spnav is None:
             spnav = SpnavClient(on_button=on_spacemouse_button)
         ai_cfg = ai_page()
@@ -191,6 +195,12 @@ def main():
                 ai = aiusage.AIUsage(ai_cfg)
             else:
                 ai.configure(ai_cfg)
+        upd_cfg = cfg.get("updates") or {}
+        if upd_cfg.get("enabled"):
+            if updater is None:
+                updater = updates.UpdateChecker(upd_cfg)
+            else:
+                updater.configure(upd_cfg)
         if cfg["notifications"]["enabled"] and notif_listener is None:
             notif_listener = NotificationListener()
         valid_profiles()
@@ -336,6 +346,31 @@ def main():
             if now - last_render >= applets.refresh_interval(current):
                 dirty = True
 
+            if updater is not None and notif is None:
+                release = updater.snapshot()
+                tag = release.get("tag")
+                # The cache remembers announcements across restarts;
+                # `announced` covers the window before the poll thread
+                # picks the cache back up.
+                if (release.get("available") and tag and tag != announced
+                        and tag != release.get("notified_tag")):
+                    announced = tag
+                    updates.mark_notified(tag)
+                    upd_cfg = cfg.get("updates") or {}
+                    summary = f"Update available: {tag}"
+                    body = "Install it from the settings app"
+                    if upd_cfg.get("notify_lcd", True):
+                        notif = ("3dxdisp-pro", summary, body,
+                                 now + max(8.0, float(
+                                     cfg["notifications"]["seconds"])))
+                        dirty = True
+                    if upd_cfg.get("notify_desktop", True):
+                        updates.notify_desktop(
+                            summary,
+                            f"3dxdisp-pro {release.get('current')} is "
+                            f"installed. {body}.")
+                    print(f"update available: {tag}", file=sys.stderr)
+
             if notif_listener is not None:
                 try:
                     app, summary, body = notif_listener.queue.get_nowait()
@@ -416,6 +451,8 @@ def main():
         spnav.stop()
     if ai:
         ai.stop()
+    if updater:
+        updater.stop()
     if notif_listener:
         notif_listener.stop()
     if lcd is not None:
