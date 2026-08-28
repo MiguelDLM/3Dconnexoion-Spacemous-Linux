@@ -178,8 +178,48 @@ spirit of 3DxWare's LCD applets on Windows. Available applets:
 - **6DOF input test**: live translation/rotation axis bars and a 31-button grid
   that lights up as you press — verify the device works at a glance (reads
   spacenavd's socket directly, alongside your other apps).
+- **AI usage**: how much of your Claude and Antigravity quota is left, with
+  the time to each reset — see below.
 - **Desktop notifications**: the same notifications GNOME/KDE show can be
   mirrored on the LCD as overlay popups (via `dbus-monitor`, optional).
+
+#### AI usage applet
+
+A quota gauge for the AI CLIs you already have signed in — no key to paste and
+nothing extra to install (`aiusage.py` uses only the standard library):
+
+- **Claude** — the real numbers, straight from the endpoint the `/usage`
+  command of Claude Code itself calls
+  (`GET https://api.anthropic.com/api/oauth/usage`), signed with the OAuth
+  token Claude Code keeps in `~/.claude/.credentials.json`. It reports the
+  **5-hour** and **7-day** window utilisation (plus the per-model weekly
+  windows on plans that have them, and extra-usage credits when enabled) with
+  the exact reset timestamps. That endpoint rate-limits aggressively, so it is
+  polled at most once every 180 seconds and the answer is cached.
+- **Claude, offline fallback** — when the endpoint is unreachable (not signed
+  in, expired token, HTTP 429) the applet counts tokens in the session
+  transcripts under `~/.claude/projects/**/*.jsonl`, grouped into the same
+  5-hour blocks [ccusage](https://github.com/ryoppippi/ccusage) uses. Set
+  *Claude 5h token budget* to turn that count into a percentage bar; leave it
+  at 0 to just read the raw totals. *Claude data source* forces `api` or
+  `local` instead of the `auto` default.
+- **Antigravity** — the `agy` CLI already knows its own quotas, and its
+  `/usage` slash command answers with JSON in print mode instead of opening
+  the TUI panel: `agy --print /usage --output-format json`. That gives the
+  **5-hour and weekly** window of every model group — *Gemini models* (`Gem`)
+  and *Claude and GPT models* (`3P`) — with the exact reset times, refreshed
+  from Google's backend. The call runs no model turn (`usage.total_tokens`
+  comes back 0), so watching your quota never spends it. Its log is redirected
+  to a single throwaway file (`$TMPDIR/spacepilot-lcd-agy.log`, truncated
+  before each call) instead of the per-run log the CLI writes by default. Set
+  *Antigravity CLI command* if the binary is not called `agy` or is not on the
+  daemon's `PATH` (`~/.local/bin` is searched too, which systemd user units
+  usually miss).
+
+Every row says where its number came from (`pro` / `live` / `local est.`), so
+an estimate is never mistaken for the real quota. Polling happens on a
+background thread, so a slow network never stalls the screen. Adding another
+provider is a `poll(cfg)` method plus one entry in `aiusage.PROVIDERS`.
 
 ### Settings application
 
@@ -266,7 +306,8 @@ The daemon survives device unplug/replug.
 ### Applet ideas (contributions welcome)
 
 Media now-playing (MPRIS), weather, pomodoro timer, per-core CPU, disk usage,
-photo slideshow, e-mail/RSS counters... the applet API is a single pure function
+photo slideshow, e-mail/RSS counters, more AI providers (Codex keeps
+`tokens_used` per thread in `~/.codex/state_5.sqlite`)... the applet API is a single pure function
 returning a 320×240 PIL image (see `applets.py`).
 
 > While the daemon runs it holds the LCD USB interface claimed — stop it

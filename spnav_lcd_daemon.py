@@ -20,8 +20,8 @@ The pages shown, their order and every visual option are configured with the
 companion settings app (lcd_settings.py) and stored in
 ~/.config/spacepilot-lcd/config.json; the daemon hot-reloads the file when it
 changes. Available applets: button mappings, digital/analog/dual clocks,
-calendar, system monitor, 6DOF input test. Desktop notifications can be
-mirrored on the screen as overlays.
+calendar, system monitor, 6DOF input test, AI subscription usage. Desktop
+notifications can be mirrored on the screen as overlays.
 
 Bezel keys (they report on the LCD USB interface, endpoint 0x81 — invisible
 to spacenavd; every press gives on-screen feedback):
@@ -41,6 +41,7 @@ from datetime import datetime
 
 import usb.core
 
+import aiusage
 import applets
 import lcdconfig
 from notifications import NotificationListener
@@ -75,6 +76,7 @@ def main():
     cfg_mtime = lcdconfig.mtime()
     stats = SystemStats()
     spnav = None
+    ai = None               # aiusage.AIUsage, only while an AI page exists
     notif_listener = None
     notif = None            # (app, summary, body, expiry)
 
@@ -173,10 +175,22 @@ def main():
         return (any(p["type"] == "input" for p in pages())
                 or bool(cfg.get("profiles")))
 
+    def ai_page():
+        for p in pages():
+            if p["type"] == "ai_usage":
+                return p
+        return None
+
     def apply_config():
-        nonlocal spnav, notif_listener, page, dirty, brightness
+        nonlocal spnav, notif_listener, ai, page, dirty, brightness
         if need_spnav() and spnav is None:
             spnav = SpnavClient(on_button=on_spacemouse_button)
+        ai_cfg = ai_page()
+        if ai_cfg is not None:
+            if ai is None:
+                ai = aiusage.AIUsage(ai_cfg)
+            else:
+                ai.configure(ai_cfg)
         if cfg["notifications"]["enabled"] and notif_listener is None:
             notif_listener = NotificationListener()
         valid_profiles()
@@ -347,6 +361,7 @@ def main():
                 act_profile = lcdconfig.get_profile(cfg, active_profile)
                 ctx = {"stats": stats,
                        "spnav": spnav.state if spnav else None,
+                       "ai": ai.snapshot() if ai else None,
                        "profiles_ui": {
                            "names": names,
                            "active": active_profile,
@@ -399,6 +414,8 @@ def main():
 
     if spnav:
         spnav.stop()
+    if ai:
+        ai.stop()
     if notif_listener:
         notif_listener.stop()
     if lcd is not None:

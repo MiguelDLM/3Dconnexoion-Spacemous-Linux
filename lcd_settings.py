@@ -29,14 +29,15 @@ import sys
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QColor, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox,
-    QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QScrollArea, QSlider, QSpinBox, QTableWidget,
-    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+    QApplication, QCheckBox, QColorDialog, QComboBox, QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMainWindow, QMenu, QMessageBox, QPushButton,
+    QScrollArea, QSlider, QSpinBox, QTableWidget, QTableWidgetItem,
+    QTabWidget, QVBoxLayout, QWidget)
 
 import applets
 import lcdconfig
+import aiusage
 from keyinjector import validate_combo
 from spnav_client import State
 from spplcd import WIDTH, HEIGHT
@@ -57,6 +58,7 @@ APPLET_LABELS = {
     "input": "6DOF input test",
     "profiles": "Profiles (selector)",
     "active_profile": "Active profile (pad view)",
+    "ai_usage": "AI usage (Claude / Antigravity)",
 }
 
 FIELD_LABELS = {
@@ -82,6 +84,23 @@ FIELD_LABELS = {
     "show_net": "Show network rate",
     "refresh_seconds": "Refresh (seconds)",
     "axis_range": "Axis range (deflection)",
+    "show_claude": "Show Claude",
+    "claude_source": "Claude data source",
+    "claude_block_tokens": "Claude 5h token budget (0 = raw count)",
+    "show_antigravity": "Show Antigravity",
+    "antigravity_command": "Antigravity CLI command",
+}
+
+# Option keys that are a fixed choice rather than free text.
+ENUM_FIELDS = {
+    "style": ["digital", "analog"],
+    "claude_source": ["auto", "api", "local"],
+}
+
+# Numeric option keys whose sensible range is not the 1-1000 default.
+SPIN_RANGES = {
+    "refresh_seconds": (1, 3600),
+    "claude_block_tokens": (0, 2000000000),
 }
 
 
@@ -122,6 +141,8 @@ class SettingsWindow(QMainWindow):
         self.stats = SystemStats()
         self.stats.cpu_percent()  # prime the delta
         self.demo_state = demo_spnav_state()
+        # Started on demand by the preview of an AI-usage page.
+        self.ai = None
 
         tabs = QTabWidget()
         self.setCentralWidget(tabs)
@@ -305,6 +326,7 @@ class SettingsWindow(QMainWindow):
         row.addWidget(upd_btn)
         row.addStretch(1)
         layout.addLayout(row)
+
         layout.addStretch(2)
         return host
 
@@ -614,9 +636,9 @@ class SettingsWindow(QMainWindow):
             combo.setCurrentText(value)
             combo.currentTextChanged.connect(setter)
             return combo
-        if key == "style":
+        if key in ENUM_FIELDS:
             combo = QComboBox()
-            combo.addItems(["digital", "analog"])
+            combo.addItems(ENUM_FIELDS[key])
             combo.setCurrentText(value)
             combo.currentTextChanged.connect(setter)
             return combo
@@ -627,7 +649,7 @@ class SettingsWindow(QMainWindow):
             return box
         if isinstance(value, int):
             spin = QSpinBox()
-            spin.setRange(1, 1000)
+            spin.setRange(*SPIN_RANGES.get(key, (1, 1000)))
             spin.setValue(value)
             spin.valueChanged.connect(setter)
             return spin
@@ -642,9 +664,15 @@ class SettingsWindow(QMainWindow):
         if page is None:
             self.preview.clear()
             return
+        if page["type"] == "ai_usage":
+            if self.ai is None:
+                self.ai = aiusage.AIUsage(page)
+            else:
+                self.ai.configure(page)
         names = lcdconfig.profile_names(self.cfg)
         first = self.cfg["profiles"][0] if self.cfg["profiles"] else None
         ctx = {"stats": self.stats, "spnav": self.demo_state,
+               "ai": self.ai.snapshot() if self.ai else None,
                "profiles_ui": {
                    "names": names,
                    "active": self.cfg["profiles"][0]["name"] if first
@@ -662,6 +690,11 @@ class SettingsWindow(QMainWindow):
                       QImage.Format_RGB888)
         self.preview.setPixmap(QPixmap.fromImage(qimg).scaled(
             WIDTH * 2, HEIGHT * 2, Qt.KeepAspectRatio))
+
+    def closeEvent(self, event):
+        if self.ai is not None:
+            self.ai.stop()
+        super().closeEvent(event)
 
     def _apply(self):
         lcdconfig.save(self.cfg)

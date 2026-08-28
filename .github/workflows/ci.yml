@@ -22,7 +22,7 @@ jobs:
         run: |
           python - <<'EOF'
           import time
-          import lcdconfig, applets
+          import aiusage, lcdconfig, applets
           from keyinjector import validate_combo
           from spnav_client import State
           from sysstats import SystemStats
@@ -34,7 +34,14 @@ jobs:
                 "bindings": {"12": {"label": "Undo", "keys": "ctrl+z"}},
                 "active_bindings": {"12": {"label": "Undo",
                                            "keys": "ctrl+z"}}}
-          ctx = {"stats": stats, "spnav": st, "profiles_ui": ui}
+          ai = aiusage.AIUsage(
+              lcdconfig.applet_with_defaults({"type": "ai_usage"}))
+          for _ in range(100):
+              if ai.snapshot():
+                  break
+              time.sleep(0.1)
+          ctx = {"stats": stats, "spnav": st, "profiles_ui": ui,
+                 "ai": ai.snapshot()}
           for ptype in lcdconfig.APPLET_DEFAULTS:
               cfg = lcdconfig.applet_with_defaults({"type": ptype})
               img = applets.RENDERERS[ptype](cfg, ctx)
@@ -43,5 +50,6 @@ jobs:
           for combo in ("tab", "g", "ctrl+shift+z", "kp_plus", "f12"):
               assert validate_combo(combo) is None, combo
           assert validate_combo("nosuchkey") is not None
+          ai.stop()
           print("key parser OK")
           EOF

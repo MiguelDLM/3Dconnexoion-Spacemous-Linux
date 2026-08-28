@@ -12,7 +12,8 @@ import calendar
 import math
 import os
 import platform
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 
 try:
     from zoneinfo import ZoneInfo
@@ -506,6 +507,105 @@ def render_saver_image(path):
 
 
 # --------------------------------------------------------------------------
+# AI usage (subscription quotas)
+# --------------------------------------------------------------------------
+
+# Draw order and accent colour of the providers aiusage.py can report on.
+PROVIDER_ORDER = ["claude", "antigravity"]
+PROVIDER_COLORS = {"claude": (230, 140, 90), "antigravity": (140, 150, 255)}
+
+
+def _countdown(target):
+    """Time left until `target` as "4d 3h" / "2h14m" / "9m", or None."""
+    if target is None:
+        return None
+    left = (target - datetime.now(timezone.utc)).total_seconds()
+    if left <= 0:
+        return "now"
+    if left >= 86400:
+        return f"{int(left // 86400)}d {int(left % 86400 // 3600)}h"
+    if left >= 3600:
+        return f"{int(left // 3600)}h{int(left % 3600 // 60):02d}m"
+    return f"{max(1, int(left // 60))}m"
+
+
+def _draw_provider(d, y0, height, key, status):
+    accent = PROVIDER_COLORS.get(key, (200, 200, 200))
+    d.text((8, y0), status.get("name") or key.title(), fill=accent,
+           font=font(16))
+    # Right of the name: where the numbers came from, so an estimate is
+    # never mistaken for the real quota.
+    tag = ("local est." if status.get("source") == "local"
+           else (status.get("plan") or "live"))
+    if status.get("note"):
+        tag = f"{tag} - {status['note']}"
+    d.text((WIDTH - 8, y0 + 4), tag[:30], fill=(130, 130, 160), anchor="rm",
+           font=font(11))
+
+    if status.get("error"):
+        d.text((16, y0 + 26), status["error"][:36], fill=(255, 120, 120),
+               font=font(13))
+        return
+    metrics = status.get("metrics") or []
+    if not metrics:
+        d.text((16, y0 + 26), "no data", fill=(140, 140, 140), font=font(13))
+        return
+    row_h = min(24, max(15, (height - 22) // len(metrics)))
+    small, tiny = font(13), font(11)
+    for n, metric in enumerate(metrics):
+        y = y0 + 22 + n * row_h + row_h // 2 - 1
+        # Antigravity labels carry a model-group prefix ("Gem 5h"), so they
+        # get their own narrower font to stay clear of the bar column.
+        d.text((8, y), metric["label"][:7], fill=(255, 255, 255),
+               anchor="lm", font=font(12))
+        percent = metric.get("percent")
+        if percent is None:
+            # No quota configured for this metric: the raw count is all we
+            # can honestly show, so it takes the bar's place.
+            d.text((66, y), metric.get("detail", "")[:21],
+                   fill=(190, 190, 190), anchor="lm", font=small)
+        else:
+            fraction = percent / 100
+            _bar(d, 66, y - 6, 100, 12, fraction, _usage_color(fraction))
+            d.text((172, y), f"{percent:.0f}%", fill=(255, 255, 255),
+                   anchor="lm", font=small)
+            if metric.get("detail"):
+                d.text((216, y), metric["detail"][:8], fill=(150, 150, 190),
+                       anchor="lm", font=tiny)
+        left = _countdown(metric.get("resets_at"))
+        if left:
+            d.text((WIDTH - 8, y), left, fill=(0, 255, 255), anchor="rm",
+                   font=tiny)
+
+
+def render_ai_usage(cfg, snapshot):
+    """snapshot: aiusage.AIUsage.snapshot() - {provider: status, updated}."""
+    img, d = page_base(cfg["title"] or "AI usage", cfg["background"])
+    shown = [k for k in PROVIDER_ORDER if cfg.get(f"show_{k}")]
+    if not shown:
+        d.text((WIDTH // 2, HEIGHT // 2), "No provider enabled",
+               fill=(180, 180, 180), anchor="mm", font=font(16))
+        return img
+    if not snapshot:
+        d.text((WIDTH // 2, HEIGHT // 2), "Reading usage...",
+               fill=(180, 180, 180), anchor="mm", font=font(16))
+        return img
+    top, footer = 36, 20
+    block_h = (HEIGHT - top - footer) // len(shown)
+    for n, key in enumerate(shown):
+        if n:
+            d.line([8, top + n * block_h - 6, WIDTH - 8,
+                    top + n * block_h - 6], fill=(60, 60, 90))
+        _draw_provider(d, top + n * block_h, block_h, key,
+                       snapshot.get(key) or {})
+    age = time.time() - snapshot.get("updated", 0)
+    d.text((8, HEIGHT - 9), f"updated {int(age)}s ago" if age < 90
+           else f"updated {int(age // 60)}m ago", fill=(100, 100, 140),
+           anchor="lm", font=font(11))
+    return img
+
+
+# --------------------------------------------------------------------------
 # Overlays (menu, help, OSD, notifications)
 # --------------------------------------------------------------------------
 
@@ -589,6 +689,7 @@ RENDERERS = {
     "profiles": lambda cfg, ctx: render_profiles(cfg, ctx["profiles_ui"]),
     "active_profile": lambda cfg, ctx: render_active_profile(
         cfg, ctx["profiles_ui"]),
+    "ai_usage": lambda cfg, ctx: render_ai_usage(cfg, ctx.get("ai") or {}),
 }
 
 
@@ -599,6 +700,10 @@ def refresh_interval(page_cfg):
         return 0.15
     if t == "system":
         return max(1, int(page_cfg["refresh_seconds"]))
+    if t == "ai_usage":
+        # The poller works in the background; re-drawing every 15s only
+        # keeps the reset countdowns honest.
+        return 15
     if t == "clock" and page_cfg["show_seconds"]:
         return 1
     return 60

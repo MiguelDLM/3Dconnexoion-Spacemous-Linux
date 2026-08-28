@@ -69,6 +69,19 @@ APPLET_DEFAULTS = {
     "active_profile": {
         "title": "Active profile",
     },
+    # AI subscription quotas. Both providers report their real 5h/weekly
+    # utilisation: Claude through the endpoint its /usage command calls,
+    # Antigravity through `agy --print /usage --output-format json`.
+    "ai_usage": {
+        "title": "AI usage",
+        "show_claude": True,
+        "claude_source": "auto",     # auto | api | local
+        "claude_block_tokens": 0,    # 5h budget for the local fallback
+        "show_antigravity": True,
+        "antigravity_command": "agy",
+        "refresh_seconds": 180,      # the Claude endpoint rate-limits hard
+        "background": "#0a0a1e",
+    },
 }
 
 DEFAULT_CONFIG = {
