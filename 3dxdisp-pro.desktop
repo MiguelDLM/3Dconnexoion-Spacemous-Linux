@@ -1,0 +1,15 @@
+[Desktop Entry]
+# Reference entry. install.sh writes its own copy with Exec/Icon pointing at
+# your actual install path — use that instead of editing this by hand.
+Type=Application
+Version=1.0
+Name=3dxdisp-pro Settings
+GenericName=SpacePilot Pro LCD
+Comment=Configure the 3Dconnexion SpacePilot Pro LCD pages, applets and button profiles
+Exec=3dxdisp-pro-settings
+Icon=3dxdisp-pro
+Terminal=false
+Categories=Utility;Settings;HardwareSettings;
+Keywords=SpacePilot;SpaceMouse;3Dconnexion;3dxdisp;LCD;spacenavd;3D mouse;
+StartupNotify=true
+StartupWMClass=3dxdisp-pro

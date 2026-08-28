@@ -24,12 +24,13 @@ the running daemon applies it immediately — no restart needed.
 """
 
 import copy
+import os
 import queue
 import sys
 import threading
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QImage, QPixmap
+from PySide6.QtGui import QColor, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QColorDialog, QComboBox, QDialog,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
@@ -833,8 +834,23 @@ class SettingsWindow(QMainWindow):
             self._reload_page_list()
 
 
+APP_ID = "3dxdisp-pro"
+
+
 def main():
+    # Identify the app the way the desktop expects, or the window ends up
+    # with a generic icon that the task bar cannot match to the launcher:
+    # the application name becomes WM_CLASS on X11, and the desktop file
+    # name becomes the app id on Wayland. Both must equal the basename of
+    # the installed .desktop file (see install.sh).
+    QApplication.setApplicationName(APP_ID)
+    QApplication.setApplicationDisplayName("3dxdisp-pro Settings")
+    QApplication.setDesktopFileName(APP_ID)
     app = QApplication(sys.argv)
+    icon = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "icons", f"{APP_ID}.svg")
+    if os.path.isfile(icon):
+        app.setWindowIcon(QIcon(icon))
     win = SettingsWindow()
     win.show()
     sys.exit(app.exec())

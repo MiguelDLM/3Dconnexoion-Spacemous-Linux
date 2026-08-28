@@ -139,17 +139,60 @@ orientation was discovered.
 ```bash
 git clone https://github.com/MiguelDLM/3dxdisp-pro.git
 cd 3dxdisp-pro
-
-# Dependencies (in a venv, or use your distro's python3-usb / python3-pil)
-python3 -m venv venv
-venv/bin/pip install -r requirements.txt
-
-# Non-root USB access (make sure your user is in the 'plugdev' group)
-sudo cp 99-spacepilot-pro-lcd.rules /etc/udev/rules.d/
-sudo udevadm control --reload
-sudo udevadm trigger --action=change --attr-match=idVendor=046d --attr-match=idProduct=c629
-# (or simply unplug and replug the device)
+./install.sh
 ```
+
+That is the whole thing. `install.sh` creates the virtual environment,
+installs the dependencies, installs the udev rule that gives your user access
+to the LCD (the only step that asks for `sudo`, and it is skipped when an
+equivalent rule is already in place), registers the daemon as a systemd user
+service, and adds the settings app to your application menu with its icon.
+Re-running it is safe — that is also how you apply an update installed by
+hand.
+
+```bash
+./install.sh --no-udev      # skip the sudo step
+./install.sh --no-service   # do not run the daemon in the background
+./install.sh --source       # ignore bundled binaries, build a venv
+./uninstall.sh              # undo it (--purge also deletes your settings)
+```
+
+### Without git or Python
+
+Download `spacepilot-pro-lcd-<version>-linux-x86_64.tar.gz` from the
+[releases page](https://github.com/MiguelDLM/3dxdisp-pro/releases), unpack it
+and run the same script:
+
+```bash
+tar xzf spacepilot-pro-lcd-*-linux-x86_64.tar.gz
+cd spacepilot-pro-lcd-*/
+./install.sh
+```
+
+The tarball ships standalone PyInstaller binaries, and `install.sh` uses them
+automatically, so no Python, no venv and no `pip` are involved. It copies them
+to `~/.local/bin` and wires up the same service and menu entry.
+
+### If the settings app does not show up in your menu
+
+It will, but two details decide *where*, and both are handled by
+`install.sh` — worth knowing if you write your own entry:
+
+- **Categories.** An entry with only `Categories=Settings;HardwareSettings;`
+  is filed under **System** by Plasma's menu (see the `<Category>Settings`
+  block in `/etc/xdg/menus/plasma-applications.menu`), which is not where
+  anyone looks for it. The installed entry adds `Utility;` so it also appears
+  in the ordinary Utilities menu, plus `Keywords=` so searching for
+  "SpacePilot" or "3Dconnexion" finds it.
+- **Window identity.** The app calls `setDesktopFileName("3dxdisp-pro")` and
+  the entry declares a matching `StartupWMClass`, so the running window binds
+  to its launcher icon instead of showing up as a generic `python3` window in
+  the task bar.
+
+Plasma only picks up new entries after its service cache is rebuilt;
+`install.sh` runs `kbuildsycoca6` for you. If you still cannot see it, run
+`kbuildsycoca6` (or log out and back in) and check
+`~/.local/share/applications/3dxdisp-pro.desktop`.
 
 ## Usage
 
@@ -267,14 +310,17 @@ notifications — with a **pixel-exact live preview** rendered by the daemon's o
 applet code. Saving applies instantly: the daemon hot-reloads
 `~/.config/spacepilot-lcd/config.json` without restarting.
 
+`install.sh` puts it in your application menu; to run it directly:
+
 ```bash
-venv/bin/pip install PySide6        # only needed for the settings app
 venv/bin/python lcd_settings.py
 ```
 
-A desktop launcher template is included (`spacepilot-lcd-settings.desktop`): edit
-the path inside and copy it to `~/.local/share/applications/`. To ship the app as
-a single binary, PyInstaller works: `pyinstaller --onefile lcd_settings.py`.
+The menu entry it installs is generated from your real install path. The
+reference copy in the repository (`3dxdisp-pro.desktop`) is there for
+packagers — prefer `install.sh` over editing it by hand. Releases also ship a
+standalone binary of this app, built with
+`pyinstaller --onefile --windowed lcd_settings.py`.
 
 ### Button profiles (SpaceMouse Enterprise style)
 

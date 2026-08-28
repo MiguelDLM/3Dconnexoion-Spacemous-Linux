@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <!-- Application icon for 3dxdisp-pro: the SpacePilot Pro LCD showing a
+       status page. Kept to a few large shapes so it still reads at 16px. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4a4a63"/>
+      <stop offset="1" stop-color="#23232f"/>
+    </linearGradient>
+  </defs>
+
+  <!-- device body -->
+  <rect x="6" y="16" width="116" height="86" rx="13" fill="url(#body)"/>
+  <rect x="6" y="16" width="116" height="86" rx="13" fill="none"
+        stroke="#12121a" stroke-width="3"/>
+
+  <!-- screen -->
+  <rect x="17" y="27" width="94" height="58" rx="4" fill="#0a0a1e"/>
+  <rect x="17" y="27" width="94" height="14" rx="4" fill="#1e1e46"/>
+  <rect x="17" y="36" width="94" height="5" fill="#1e1e46"/>
+  <circle cx="103" cy="34" r="3.5" fill="#00e5ff"/>
+
+  <!-- status bars, the shape every applet page shares -->
+  <g>
+    <rect x="24" y="49" width="52" height="8" rx="2" fill="#00c850"/>
+    <rect x="24" y="49" width="80" height="8" rx="2" fill="none"
+          stroke="#5a5a78" stroke-width="2"/>
+    <rect x="24" y="62" width="72" height="8" rx="2" fill="#f0c800"/>
+    <rect x="24" y="62" width="80" height="8" rx="2" fill="none"
+          stroke="#5a5a78" stroke-width="2"/>
+    <rect x="24" y="75" width="30" height="8" rx="2" fill="#00e5ff"/>
+    <rect x="24" y="75" width="80" height="8" rx="2" fill="none"
+          stroke="#5a5a78" stroke-width="2"/>
+  </g>
+
+  <!-- bezel keys under the screen -->
+  <g fill="#6e6e8c">
+    <rect x="30" y="91" width="14" height="5" rx="2.5"/>
+    <rect x="52" y="91" width="24" height="5" rx="2.5"/>
+    <rect x="84" y="91" width="14" height="5" rx="2.5"/>
+  </g>
+
+  <!-- 6DOF puck -->
+  <ellipse cx="64" cy="112" rx="30" ry="9" fill="#2f2f3f"/>
+  <ellipse cx="64" cy="109" rx="30" ry="9" fill="#53536b"/>
+  <ellipse cx="64" cy="109" rx="16" ry="4.5" fill="#33333f"/>
+</svg>

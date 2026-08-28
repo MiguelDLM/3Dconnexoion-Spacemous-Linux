@@ -47,10 +47,11 @@ jobs:
           mkdir -p "pkg/spacepilot-pro-lcd-${VERSION}"
           cp dist/spacepilot-lcd-settings dist/spacepilot-lcd-daemon \
              "pkg/spacepilot-pro-lcd-${VERSION}/"
-          cp *.py *.rules spacepilot-lcd.service \
-             spacepilot-lcd-settings.desktop requirements.txt \
+          cp *.py *.rules *.sh spacepilot-lcd.service \
+             3dxdisp-pro.desktop requirements.txt \
              README.md LICENSE "pkg/spacepilot-pro-lcd-${VERSION}/"
-          cp -r examples "pkg/spacepilot-pro-lcd-${VERSION}/"
+          cp -r examples icons "pkg/spacepilot-pro-lcd-${VERSION}/"
+          chmod +x "pkg/spacepilot-pro-lcd-${VERSION}"/*.sh
           tar -C pkg -czf "spacepilot-pro-lcd-${VERSION}-linux-x86_64.tar.gz" \
               "spacepilot-pro-lcd-${VERSION}"
 
