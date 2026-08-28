@@ -12,7 +12,7 @@ import glob
 import json
 import os
 
-VERSION = "1.0"
+VERSION = "1.1"
 REPO_URL = "https://github.com/MiguelDLM/3dxdisp-pro"
 
 CONFIG_DIR = os.path.join(
